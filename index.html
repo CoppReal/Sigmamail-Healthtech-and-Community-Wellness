@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Silent Collapse Detector — Prototype</title>
+<style>
+  :root{
+    --bg:#0a1210;
+    --bg2:#0f1a17;
+    --line:#39e58c;
+    --line-dim:#1f5c40;
+    --amber:#f5a623;
+    --red:#ff4d4d;
+    --text:#d9f2e6;
+    --text-dim:#6f9c8a;
+    --card:#0e1815;
+    --border:#1c2e28;
+    font-family:'Courier New', ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){ }
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    height:100%;
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  body{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:20px 16px 32px;
+    gap:16px;
+  }
+  header{
+    width:100%;
+    max-width:480px;
+    text-align:left;
+  }
+  h1{
+    font-size:1.05rem;
+    letter-spacing:0.02em;
+    margin:0 0 4px;
+    color:var(--line);
+    font-weight:700;
+  }
+  .sub{
+    font-size:0.78rem;
+    color:var(--text-dim);
+    margin:0;
+    line-height:1.4;
+  }
+  .panel{
+    width:100%;
+    max-width:480px;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px;
+  }
+  .status-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:10px;
+  }
+  .status-label{
+    font-size:0.7rem;
+    color:var(--text-dim);
+    text-transform:uppercase;
+  }
+  .status-value{
+    font-size:1.4rem;
+    font-weight:700;
+  }
+  .state-normal{color:var(--line);}
+  .state-impact{color:var(--amber);}
+  .state-alert{color:var(--red);}
+
+  canvas{
+    width:100%;
+    height:140px;
+    display:block;
+    background:var(--bg2);
+    border-radius:6px;
+    border:1px solid var(--border);
+  }
+
+  .metrics{
+    display:flex;
+    gap:10px;
+    margin-top:12px;
+  }
+  .metric{
+    flex:1;
+    background:var(--bg2);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:8px 10px;
+  }
+  .metric .k{font-size:0.65rem;color:var(--text-dim);text-transform:uppercase;}
+  .metric .v{font-size:1.05rem;font-weight:700;margin-top:2px;}
+
+  button{
+    font-family:inherit;
+    border:none;
+    border-radius:8px;
+    padding:14px;
+    font-size:0.9rem;
+    font-weight:700;
+    cursor:pointer;
+    width:100%;
+  }
+  .btn-primary{
+    background:var(--line);
+    color:#04150c;
+  }
+  .btn-secondary{
+    background:transparent;
+    border:1px solid var(--border);
+    color:var(--text);
+    margin-top:8px;
+  }
+  .btn-danger{
+    background:var(--red);
+    color:#2a0000;
+  }
+
+  .alert-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(20,0,0,0.92);
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+    z-index:50;
+    text-align:center;
+    padding:24px;
+    padding-top:calc(24px + env(safe-area-inset-top,0px));
+    padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
+  }
+  .alert-overlay.show{display:flex;}
+  .alert-title{
+    font-size:1.3rem;
+    color:var(--red);
+    font-weight:700;
+  }
+  .countdown{
+    font-size:3rem;
+    font-weight:700;
+    color:#fff;
+  }
+  .sent-screen{display:none;flex-direction:column;gap:10px;align-items:center;}
+  .sent-screen.show{display:flex;}
+  .sent-line{font-size:0.85rem;color:var(--text-dim);}
+  .pin{font-size:0.9rem;color:var(--line);}
+
+  .log{
+    width:100%;
+    max-width:480px;
+    font-size:0.72rem;
+    color:var(--text-dim);
+    line-height:1.5;
+    max-height:110px;
+    overflow-y:auto;
+  }
+  .perm-note{
+    font-size:0.75rem;
+    color:var(--amber);
+    margin-top:10px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>◍ SILENT COLLAPSE DETECTOR</h1>
+  <p class="sub">Watches motion for a fall pattern (spike → stillness), then alerts the caregivers you chose. Prototype only — not a medical device.</p>
+</header>
+
+<div class="panel">
+  <div class="status-row">
+    <span class="status-label">State</span>
+    <span class="status-value state-normal" id="stateText">NORMAL</span>
+  </div>
+  <canvas id="graph"></canvas>
+  <div class="metrics">
+    <div class="metric"><div class="k">Magnitude</div><div class="v" id="magVal">—</div></div>
+    <div class="metric"><div class="k">Stillness</div><div class="v" id="stillVal">—</div></div>
+    <div class="metric"><div class="k">Events</div><div class="v" id="eventCount">0</div></div>
+  </div>
+</div>
+
+<button class="btn-primary" id="simBtn">Simulate a fall</button>
+<button class="btn-secondary" id="startBtn">Use real motion sensor (optional)</button>
+<p class="perm-note" id="permNote"></p>
+
+<div class="log" id="log"></div>
+
+<div class="alert-overlay" id="overlay">
+  <div id="countdownScreen">
+    <div class="alert-title">Possible collapse detected</div>
+    <div class="countdown" id="countdownNum">5</div>
+    <p class="sent-line">If you're okay, tap below to cancel.</p>
+    <button class="btn-danger" id="cancelBtn">I'm okay — cancel alert</button>
+  </div>
+  <div class="sent-screen" id="sentScreen">
+    <div class="alert-title">Alert sent to your caregivers</div>
+    <p class="sent-line">Notified the caregivers you registered (simulated):</p>
+    <p class="pin">👤 Mother &nbsp;·&nbsp; 👤 Sister</p>
+    <p class="sent-line">They can open your live location and health data in the app.</p>
+    <button class="btn-secondary" id="resetBtn">Reset demo</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('graph');
+  const ctx = canvas.getContext('2d');
+  function resizeCanvas(){
+    canvas.width = canvas.clientWidth * devicePixelRatio;
+    canvas.height = canvas.clientHeight * devicePixelRatio;
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  const history = [];
+  const HISTORY_LEN = 150;
+  const IMPACT_THRESHOLD = 22; // magnitude above normal gravity (~9.8) that counts as a spike
+  const STILL_WINDOW_MS = 6000; // watch this long after a spike for stillness
+  const STILL_VARIANCE_THRESHOLD = 1.2; // low variance = not moving
+  const COUNTDOWN_SECONDS = 5;
+
+  let state = 'NORMAL'; // NORMAL, WATCHING, ALERTING
+  let watchStart = 0;
+  let watchSamples = [];
+  let countdownTimer = null;
+  let countdownVal = COUNTDOWN_SECONDS;
+  let eventCount = 0;
+
+  const stateText = document.getElementById('stateText');
+  const magVal = document.getElementById('magVal');
+  const stillVal = document.getElementById('stillVal');
+  const eventCountEl = document.getElementById('eventCount');
+  const logEl = document.getElementById('log');
+  const overlay = document.getElementById('overlay');
+  const countdownScreen = document.getElementById('countdownScreen');
+  const sentScreen = document.getElementById('sentScreen');
+  const countdownNum = document.getElementById('countdownNum');
+
+  function log(msg){
+    const t = new Date().toLocaleTimeString();
+    logEl.innerHTML = `[${t}] ${msg}<br>` + logEl.innerHTML;
+  }
+
+  function setState(s){
+    state = s;
+    stateText.textContent = s === 'NORMAL' ? 'NORMAL' : (s === 'WATCHING' ? 'CHECKING…' : 'ALERTING');
+    stateText.className = 'status-value ' + (s === 'NORMAL' ? 'state-normal' : (s === 'WATCHING' ? 'state-impact' : 'state-alert'));
+  }
+
+  function pushHistory(m){
+    history.push(m);
+    if (history.length > HISTORY_LEN) history.shift();
+    draw();
+  }
+
+  function draw(){
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle = '#1c2e28';
+    ctx.lineWidth = 1 * devicePixelRatio;
+    ctx.beginPath();
+    ctx.moveTo(0, h/2);
+    ctx.lineTo(w, h/2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#39e58c';
+    ctx.lineWidth = 2 * devicePixelRatio;
+    ctx.beginPath();
+    const scaleY = h / 50;
+    const stepX = w / HISTORY_LEN;
+    history.forEach((v, i) => {
+      const x = i * stepX;
+      const y = h - Math.min(v, 50) * scaleY;
+      if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  }
+
+  function variance(arr){
+    if (arr.length < 2) return 999;
+    const mean = arr.reduce((a,b)=>a+b,0)/arr.length;
+    return arr.reduce((a,b)=>a + (b-mean)*(b-mean), 0)/arr.length;
+  }
+
+  function handleMotion(mag){
+    magVal.textContent = mag.toFixed(1);
+    pushHistory(mag);
+
+    if (state === 'NORMAL' && mag > IMPACT_THRESHOLD){
+      eventCount++;
+      eventCountEl.textContent = eventCount;
+      log(`Spike detected (magnitude ${mag.toFixed(1)}) — checking for stillness…`);
+      setState('WATCHING');
+      watchStart = Date.now();
+      watchSamples = [];
+      return;
+    }
+
+    if (state === 'WATCHING'){
+      watchSamples.push(mag);
+      const elapsed = Date.now() - watchStart;
+      const v = variance(watchSamples);
+      stillVal.textContent = v < STILL_VARIANCE_THRESHOLD ? 'still' : 'moving';
+
+      if (elapsed >= STILL_WINDOW_MS){
+        if (v < STILL_VARIANCE_THRESHOLD){
+          log('No movement after spike — treating as possible collapse.');
+          triggerAlert();
+        } else {
+          log('Movement resumed after spike — likely a drop or normal handling, not a collapse.');
+          setState('NORMAL');
+          stillVal.textContent = '—';
+        }
+      }
+    }
+  }
+
+  function triggerAlert(){
+    setState('ALERTING');
+    overlay.classList.add('show');
+    countdownScreen.style.display = 'flex';
+    sentScreen.classList.remove('show');
+    countdownVal = COUNTDOWN_SECONDS;
+    countdownNum.textContent = countdownVal;
+    countdownTimer = setInterval(() => {
+      countdownVal--;
+      countdownNum.textContent = countdownVal;
+      if (countdownVal <= 0){
+        clearInterval(countdownTimer);
+        countdownScreen.style.display = 'none';
+        sentScreen.classList.add('show');
+        log('Alert sent to registered caregivers with data access (simulated).');
+      }
+    }, 1000);
+  }
+
+  document.getElementById('cancelBtn').addEventListener('click', () => {
+    clearInterval(countdownTimer);
+    overlay.classList.remove('show');
+    setState('NORMAL');
+    stillVal.textContent = '—';
+    log('Alert cancelled by user.');
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    overlay.classList.remove('show');
+    sentScreen.classList.remove('show');
+    setState('NORMAL');
+    stillVal.textContent = '—';
+  });
+
+  document.getElementById('simBtn').addEventListener('click', () => {
+    // Feed a synthetic fall pattern: normal -> dip -> spike -> flatline held past the 6s stillness window
+    const pattern = [9.8, 9.5, 10.1, 2.0, 1.5, 28.0];
+    const flatlineTail = Array(28).fill(6.0).map(v => v + (Math.random() * 0.3 - 0.15));
+    const fullPattern = pattern.concat(flatlineTail);
+    let i = 0;
+    const iv = setInterval(() => {
+      if (i >= fullPattern.length){ clearInterval(iv); return; }
+      handleMotion(fullPattern[i]);
+      i++;
+    }, 250);
+  });
+
+  const permNote = document.getElementById('permNote');
+  const startBtn = document.getElementById('startBtn');
+  const simBtn = document.getElementById('simBtn');
+
+  function beginListening(){
+    window.addEventListener('devicemotion', (e) => {
+      const a = e.accelerationIncludingGravity || e.acceleration;
+      if (!a || a.x === null) return;
+      const mag = Math.sqrt((a.x||0)**2 + (a.y||0)**2 + (a.z||0)**2);
+      handleMotion(mag);
+    });
+    startBtn.style.display = 'none';
+    simBtn.style.display = 'block';
+    log('Motion sensor active. Watching for fall pattern.');
+  }
+
+  startBtn.addEventListener('click', () => {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+      DeviceMotionEvent.requestPermission().then(res => {
+        if (res === 'granted'){
+          beginListening();
+        } else {
+          permNote.textContent = 'Motion permission denied — try the simulate button instead.';
+          simBtn.style.display = 'block';
+        }
+      }).catch(() => {
+        permNote.textContent = 'Could not request motion permission — try the simulate button instead.';
+        simBtn.style.display = 'block';
+      });
+    } else if (window.DeviceMotionEvent) {
+      beginListening();
+    } else {
+      permNote.textContent = 'This device/browser has no motion sensor access — use the simulate button.';
+      simBtn.style.display = 'block';
+    }
+  });
+
+  resizeCanvas();
+  draw();
+})();
+</script>
+</body>
+</html>
